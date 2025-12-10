@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Bike Specs — Static Browser</title>
+<style>
+  :root{
+    --bg:#0f1724; --card:#0b1220; --accent:#1e90ff; --muted:#98a0b3; --glass: rgba(255,255,255,0.03);
+    --max-width:1100px;
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    color: #e6eef8;
+  }
+  body{
+    margin:0; background:linear-gradient(180deg,var(--bg), #071026 160%); min-height:100vh;
+    display:flex; flex-direction:column; align-items:center; padding:28px 16px;
+  }
+  .container{width:100%; max-width:var(--max-width);}
+  header{display:flex; gap:16px; align-items:center; margin-bottom:18px;}
+  h1{margin:0; font-size:20px; letter-spacing:0.2px;}
+  .controls{display:flex; gap:10px; flex-wrap:wrap; margin:14px 0 22px;}
+  .search, .select, .sort{
+    background:var(--glass); border:1px solid rgba(255,255,255,0.04); padding:8px 10px; border-radius:8px;
+    color:var(--muted); min-width:160px;
+  }
+  .search{flex:1; min-width:220px;}
+  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:14px;}
+  .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent); border-radius:10px; padding:12px; box-shadow: 0 6px 18px rgba(2,6,23,0.6); border:1px solid rgba(255,255,255,0.03);}
+  .card h3{margin:0 0 6px; font-size:16px;}
+  .meta{color:var(--muted); font-size:13px; margin-bottom:8px;}
+  .specs{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;}
+  .pill{background:rgba(255,255,255,0.03); padding:6px 8px; border-radius:6px; font-size:12px; color:var(--muted);}
+  .btn{background:var(--accent); color:white; padding:8px 10px; border-radius:8px; border:none; cursor:pointer; font-weight:600;}
+  footer{color:var(--muted); margin:22px 0 8px; font-size:13px;}
+  /* Modal */
+  .modal-backdrop{position:fixed; inset:0; display:none; place-items:center; background:linear-gradient(180deg, rgba(0,0,0,0.6), rgba(0,0,0,0.85)); z-index:200;}
+  .modal{background:linear-gradient(180deg,#071126,#071026); width:92%; max-width:820px; border-radius:12px; padding:18px; border:1px solid rgba(255,255,255,0.03);}
+  .modal h2{margin:0 0 6px;}
+  .modal .row{display:flex; gap:14px; flex-wrap:wrap; margin-top:12px;}
+  .spec-list{flex:1; min-width:220px;}
+  .spec-item{display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px dashed rgba(255,255,255,0.02); color:var(--muted); font-size:14px;}
+  .close-x{background:transparent; border:0; color:var(--muted); cursor:pointer; font-size:18px;}
+  /* responsive */
+  @media (max-width:520px){ .controls{flex-direction:column;} header{flex-direction:column; align-items:flex-start;} .search{min-width:auto} }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div style="display:flex;flex-direction:column;">
+      <h1>Bike Specs Explorer</h1>
+      <div style="color:var(--muted); font-size:13px;">Static, frontend-only site. Search, filter and view full specs.</div>
+    </div>
+    <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
+      <button class="btn" id="downloadCSV">Export CSV</button>
+      <button class="btn" id="resetBtn" title="Reset filters">Reset</button>
+    </div>
+  </header>
+
+  <div class="controls">
+    <input id="searchInput" class="search" placeholder="Search by model, brand, engine, year or keyword (e.g. 'cruiser')" />
+    <select id="brandSelect" class="select">
+      <option value="">All brands</option>
+    </select>
+    <select id="yearSelect" class="select">
+      <option value="">All years</option>
+    </select>
+    <select id="sortSelect" class="sort">
+      <option value="relevance">Sort: Relevance</option>
+      <option value="brand-asc">Brand A → Z</option>
+      <option value="year-desc">Year (new → old)</option>
+      <option value="price-asc">Price low → high</option>
+      <option value="price-desc">Price high → low</option>
+    </select>
+  </div>
+
+  <div id="results" class="grid" aria-live="polite"></div>
+
+  <footer>Made with ❤️ — static JSON data. To add bikes, edit the <code>BIKES</code> array in the script.</footer>
+</div>
+
+<!-- Modal -->
+<div id="modalBackdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-hidden="true">
+  <div class="modal" role="document">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h2 id="modalTitle">Bike Title</h2>
+      <div>
+        <button class="close-x" id="copyBtn" title="Copy specs">📋</button>
+        <button class="close-x" id="closeModal" title="Close">✖</button>
+      </div>
+    </div>
+    <div id="modalSubtitle" style="color:var(--muted); margin-top:2px;">Subtitle</div>
+    <div class="row">
+      <div class="spec-list" id="specList"></div>
+      <div style="min-width:220px;">
+        <div style="background:rgba(255,255,255,0.02); padding:12px; border-radius:8px;">
+          <div style="font-size:13px; color:var(--muted)">Quick facts</div>
+          <div style="margin-top:8px;">
+            <div class="pill" id="q1"></div>
+            <div class="pill" id="q2" style="margin-left:6px"></div>
+            <div class="pill" id="q3" style="margin-left:6px"></div>
+          </div>
+          <div style="margin-top:12px;">
+            <strong>Price:</strong>
+            <div id="price" style="font-size:18px; margin-top:6px;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* -------------------------------
+  Static data: Add / edit bikes here
+  Each bike object may include:
+  id, brand, model, year, type, engine (cc), power (bhp@rpm), torque (Nm@rpm),
+  topSpeed (km/h), weight (kg), fuel (L), price (string), description
+---------------------------------*/
+const BIKES = [
+  {
+    id: "b001", brand: "Royal Enfield", model: "Classic 350", year: 2024, type: "Cruiser",
+    engine: "349 cc, single-cylinder, air-oil cooled", power: "20.2 bhp @ 6100 rpm", torque: "27 Nm @ 4000 rpm",
+    topSpeed: "120 km/h", weight: "195 kg", fuel: "13 L", price: "₹1,95,000 (ex-showroom)",
+    description: "Retro-styled cruiser with torquey single cylinder engine, great for city & low-speed touring."
+  },
+  {
+    id: "b002", brand: "Bajaj", model: "Pulsar NS200", year: 2023, type: "Naked",
+    engine: "199.5 cc, liquid-cooled, single", power: "24 bhp @ 9750 rpm", torque: "18.6 Nm @ 8000 rpm",
+    topSpeed: "135 km/h", weight: "156 kg", fuel: "12 L", price: "₹1,45,000 (ex-showroom)",
+    description: "Sporty streetfighter with a strong mid-range and lightweight chassis."
+  },
+  {
+    id: "b003", brand: "Kawasaki", model: "Ninja ZX-10R", year: 2024, type: "Sport",
+    engine: "998 cc, inline-4, liquid-cooled", power: "200 bhp (approx)", torque: "113 Nm (approx)",
+    topSpeed: "299+ km/h", weight: "206 kg", fuel: "17 L", price: "₹17,50,000 (approx)",
+    description: "Track-focused liter-class superbike with advanced electronics and aggressive ergonomics."
+  },
+  {
+    id: "b004", brand: "Hero", model: "Splendor Plus", year: 2022, type: "Commuter",
+    engine: "97.2 cc, air-cooled, single", power: "8 bhp", torque: "8.05 Nm",
+    topSpeed: "85 km/h", weight: "112 kg", fuel: "9 L", price: "₹71,000 (ex-showroom)",
+    description: "Reliable fuel-efficient commuter — one of India's best-selling motorcycles."
+  },
+  {
+    id: "b005", brand: "Honda", model: "Hornet 2.0", year: 2023, type: "Street",
+    engine: "184.4 cc, single-cylinder, air-cooled", power: "17 bhp", torque: "16.1 Nm",
+    topSpeed: "120 km/h", weight: "145 kg", fuel: "12 L", price: "₹1,40,000 (ex-showroom)",
+    description: "Balanced street bike with comfortable ergonomics and smooth engine characteristics."
+  },
+  {
+    id: "b006", brand: "Yamaha", model: "R15 V4", year: 2024, type: "Sport",
+    engine: "155 cc, liquid-cooled, single", power: "18.6 bhp", torque: "14.1 Nm",
+    topSpeed: "140 km/h", weight: "142 kg", fuel: "11 L", price: "₹1,85,000 (approx)",
+    description: "Popular sportbike in the 150-160cc class with sharp handling and aerodynamic styling."
+  },
+  {
+    id: "b007", brand: "TVS", model: "Apache RTR 200 4V", year: 2022, type: "Sport",
+    engine: "197.75 cc, oil-cooled single", power: "20.3 bhp", torque: "18.1 Nm",
+    topSpeed: "135 km/h", weight: "153 kg", fuel: "12 L", price: "₹1,45,000 (ex-showroom)",
+    description: "Performance oriented street bike with good handling and braking setup."
+  },
+  {
+    id: "b008", brand: "Royal Enfield", model: "Hunter 350", year: 2023, type: "Roadster",
+    engine: "349 cc, single-cylinder, air-oil cooled", power: "20.2 bhp", torque: "27 Nm",
+    topSpeed: "120 km/h", weight: "183 kg", fuel: "12 L", price: "₹1,70,000 (ex-showroom)",
+    description: "Lightweight modern classic built for urban riding with retro looks."
+  }
+];
+
+/* ------------ Utility & UI binding ------------ */
+const resultsEl = document.getElementById('results');
+const searchInput = document.getElementById('searchInput');
+const brandSelect = document.getElementById('brandSelect');
+const yearSelect = document.getElementById('yearSelect');
+const sortSelect = document.getElementById('sortSelect');
+const modalBackdrop = document.getElementById('modalBackdrop');
+const modalTitle = document.getElementById('modalTitle');
+const modalSubtitle = document.getElementById('modalSubtitle');
+const specList = document.getElementById('specList');
+const q1 = document.getElementById('q1'), q2 = document.getElementById('q2'), q3 = document.getElementById('q3');
+const priceEl = document.getElementById('price');
+const copyBtn = document.getElementById('copyBtn');
+const closeModal = document.getElementById('closeModal');
+const downloadCSV = document.getElementById('downloadCSV');
+const resetBtn = document.getElementById('resetBtn');
+
+let currentList = [...BIKES];
+
+/* populate filter dropdowns */
+function populateFilters(){
+  const brands = Array.from(new Set(BIKES.map(b=>b.brand))).sort();
+  brands.forEach(b=> brandSelect.appendChild(new Option(b, b)));
+  const years = Array.from(new Set(BIKES.map(b=>b.year))).sort((a,b)=>b-a);
+  years.forEach(y=> yearSelect.appendChild(new Option(y, y)));
+}
+populateFilters();
+
+/* render cards */
+function render(list){
+  resultsEl.innerHTML = '';
+  if(!list.length){
+    resultsEl.innerHTML = '<div style="grid-column:1/-1; color:var(--muted); padding:20px; text-align:center;">No bikes found — try different filters or search.</div>';
+    return;
+  }
+  list.forEach(b=>{
+    const card = document.createElement('div'); card.className='card';
+    card.innerHTML = `
+      <h3>${escapeHtml(b.brand)} — ${escapeHtml(b.model)}</h3>
+      <div class="meta">${b.type} • ${b.engine} • ${b.year}</div>
+      <div class="specs">
+        <div class="pill">Power: ${b.power}</div>
+        <div class="pill">Torque: ${b.torque}</div>
+        <div class="pill">Top: ${b.topSpeed}</div>
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div style="color:var(--muted); font-size:13px">${b.weight} • ${b.fuel}</div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn" data-id="${b.id}">View</button>
+        </div>
+      </div>
+    `;
+    resultsEl.appendChild(card);
+    card.querySelector('button').addEventListener('click', ()=> openModal(b.id));
+  });
+}
+
+/* safe text */
+function escapeHtml(s){ return (s+'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]) ); }
+
+/* search & filter pipeline */
+function filterAndSort(){
+  const q = searchInput.value.trim().toLowerCase();
+  const brand = brandSelect.value;
+  const year = yearSelect.value;
+  const sort = sortSelect.value;
+
+  let list = BIKES.filter(b=>{
+    if(brand && b.brand !== brand) return false;
+    if(year && String(b.year) !== String(year)) return false;
+    if(!q) return true;
+    const hay = `${b.brand} ${b.model} ${b.engine} ${b.type} ${b.year} ${b.description} ${b.price}`.toLowerCase();
+    return hay.includes(q);
+  });
+
+  // sorting
+  if(sort === 'brand-asc') list.sort((a,b)=> a.brand.localeCompare(b.brand));
+  else if(sort === 'year-desc') list.sort((a,b)=> b.year - a.year);
+  else if(sort === 'price-asc' || sort === 'price-desc'){
+    // try to parse numeric price when possible (strip non-digits)
+    list.sort((a,b)=>{
+      const pa = parsePrice(a.price), pb = parsePrice(b.price);
+      return (pa - pb) * (sort==='price-asc'?1:-1);
+    });
+  }
+
+  currentList = list;
+  render(list);
+}
+
+/* parse numeric price if present (simple) */
+function parsePrice(priceStr){
+  if(!priceStr) return 0;
+  const num = priceStr.replace(/[^\d.]/g,'');
+  return parseFloat(num) || 0;
+}
+
+/* Open modal with full specs */
+function openModal(id){
+  const b = BIKES.find(x=>x.id===id); if(!b) return;
+  modalTitle.textContent = `${b.brand} — ${b.model}`;
+  modalSubtitle.textContent = `${b.type} • ${b.year}`;
+  specList.innerHTML = '';
+  const fields = ['engine','power','torque','topSpeed','weight','fuel','price','description'];
+  fields.forEach(f=>{
+    if(b[f]){
+      const div = document.createElement('div'); div.className='spec-item';
+      const label = f === 'topSpeed' ? 'Top speed' : (f.charAt(0).toUpperCase()+f.slice(1));
+      div.innerHTML = `<div style="color:var(--muted)">${label}</div><div style="text-align:right;">${escapeHtml(b[f])}</div>`;
+      specList.appendChild(div);
+    }
+  });
+  q1.textContent = b.type || '';
+  q2.textContent = b.engine || '';
+  q3.textContent = `${b.year || ''}`;
+  priceEl.textContent = b.price || '—';
+  modalBackdrop.style.display = 'grid';
+  modalBackdrop.setAttribute('aria-hidden','false');
+}
+
+/* close modal */
+function closeModalFunc(){
+  modalBackdrop.style.display = 'none';
+  modalBackdrop.setAttribute('aria-hidden','true');
+}
+
+/* copy specs (to clipboard) */
+async function copySpecs(){
+  const t = modalTitle.textContent;
+  const items = Array.from(specList.querySelectorAll('.spec-item')).map(r => r.textContent.trim()).join('\n');
+  const text = `${t}\n${modalSubtitle.textContent}\n\n${items}\n\n(source: static site)`;
+  try{
+    await navigator.clipboard.writeText(text);
+    copyBtn.textContent = '✅';
+    setTimeout(()=> copyBtn.textContent = '📋', 900);
+  }catch(e){
+    alert('Copy failed. Your browser may restrict clipboard access.');
+  }
+}
+
+/* CSV Export of current list */
+function exportCSV(list){
+  const headers = ['Brand','Model','Year','Type','Engine','Power','Torque','TopSpeed','Weight','Fuel','Price','Description'];
+  const rows = list.map(b => [
+    b.brand,b.model,b.year,b.type,b.engine,b.power,b.torque,b.topSpeed,b.weight,b.fuel,b.price,b.description
+  ]);
+  const csv = [headers, ...rows].map(r=> r.map(c => `"${String(c||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'bikes.csv';
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
+
+/* Reset filters */
+function resetFilters(){
+  searchInput.value = '';
+  brandSelect.value = '';
+  yearSelect.value = '';
+  sortSelect.value = 'relevance';
+  filterAndSort();
+}
+
+/* Events */
+searchInput.addEventListener('input', debounce(filterAndSort, 250));
+brandSelect.addEventListener('change', filterAndSort);
+yearSelect.addEventListener('change', filterAndSort);
+sortSelect.addEventListener('change', filterAndSort);
+closeModal.addEventListener('click', closeModalFunc);
+modalBackdrop.addEventListener('click', (e)=> { if(e.target === modalBackdrop) closeModalFunc(); });
+copyBtn.addEventListener('click', copySpecs);
+downloadCSV.addEventListener('click', ()=> exportCSV(currentList));
+resetBtn.addEventListener('click', resetFilters);
+
+/* initial render */
+render(BIKES);
+
+/* small helpers */
+function debounce(fn, wait){
+  let t;
+  return (...args)=> { clearTimeout(t); t = setTimeout(()=> fn(...args), wait); };
+}
+</script>
+</body>
+</html>
